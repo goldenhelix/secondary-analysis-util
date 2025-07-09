@@ -1,0 +1,131 @@
+name: Compress and Index Genomic Files
+description: Compress, index, and validate genomic files (VCF, BAM, CRAM, BED, etc.)
+auto_generate_session_for_account: "{workspaceBot}"
+
+agent_requirements:
+  cpu_cores: 4
+  memory_gb: 8
+
+parameters:
+  - name: input_directory
+    type: directory
+    label: Input Directory
+    help: Directory containing genomic files to compress and index
+    supports_location_mode: 'no_append'
+    
+  - name: compress_vcf
+    type: boolean
+    label: Compress and index VCFs
+    help: Choose whether to compress and index VCFs
+    
+  - name: compress_bam
+    type: boolean
+    label: Compress and index BAMs
+    help: Choose whether to compress and index BAMs
+    
+  - name: compress_cram
+    type: boolean
+    label: Compress and index CRAMs
+    help: Choose whether to compress and index CRAMs
+    
+  - name: compress_bed
+    type: boolean
+    label: Compress and index BEDs
+    help: Choose whether to compress and index BEDs
+    
+  - name: remove_uncompressed
+    type: boolean
+    label: Remove Uncompressed Files
+    help: Choose whether to remove uncompressed files after compression and indexing
+
+  - name: index_files
+    type: boolean
+    label: Index Files
+    help: Choose whether to index files after compression
+    value: "true"
+    group: Advanced Options
+
+  - name: search_subdirectories
+    type: boolean
+    label: Search Subdirectories
+    help: Choose whether to search subdirectories for genomic files
+    value: "true"
+    group: Advanced Options
+
+  - name: search_pattern
+    label: Search Pattern
+    help: Pattern to search for genomic files (e.g., sample_name*). Only used if non-empty.
+    value: ""
+    group: Advanced Options
+
+steps:
+  - name: compress_and_index
+    description: Compress and index genomic files
+    type: cmd
+    docker:
+      image: ${VSPIPELINE_DOCKER_IMAGE}
+    args:
+      - |-
+        set -euo pipefail
+
+        # Set up scratch space
+        cd /scratch
+
+        # Function to compress and index a file
+        compress_and_index_file() {
+        
+          # Copy file to scratch space (since we support no-append)
+          local file=$1
+          local file_type=${file##*.}
+
+          # Copy file to scratch space (since we support no-append)
+          cp "$file" .
+          local file_name=$(basename "$file")
+
+          # Check if file is already compressed
+          # Case 1: File is uncompressed
+          # Case 2: File is compressed with bgzip
+          # Case 3: File is compressed with something else
+
+          if [[ "$file_type" == "vcf" ]]; then
+            # File is uncompressed
+            echo "File is uncompressed: $file_name"
+          else
+            echo "File is compressed: $file_name"
+          fi
+
+        }
+
+        # Add file types to search for
+        file_types=()
+        if [[ "$compress_vcf" == "true" ]]; then
+          file_types+="(*vcf*)"
+        fi
+
+        if [[ "$compress_bam" == "true" ]]; then
+          file_types+="(*bam*)"
+        fi
+
+        if [[ "$compress_cram" == "true" ]]; then
+          file_types+="(*cram*)"
+        fi
+
+        if [[ "$compress_bed" == "true" ]]; then
+          file_types+="(*bed*)"
+        fi        
+
+        # Search for each file type
+
+        for file_type in "${file_types[@]}"; do
+          if [[ "$search_subdirectories" == "true" ]]; then
+            find "$input_directory" -type f -name "${search_pattern}${file_type}" | \
+            while read -r file; do
+              compress_and_index_file "$file"
+            done
+          else
+            find "$input_directory" -maxdepth 1 -type f -name "${search_pattern}${file_type}" | \
+            while read -r file; do
+              compress_and_index_file "$file"
+            done
+          fi
+        done
