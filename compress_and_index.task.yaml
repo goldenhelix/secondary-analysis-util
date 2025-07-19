@@ -36,6 +36,12 @@ parameters:
     label: Compress and index BEDs
     value: "true"
     help: Choose whether to compress and index BEDs
+
+  - name: compress_fastq
+    type: boolean
+    label: Compress and index FASTQs
+    value: "true"
+    help: Choose whether to compress and index FASTQs
     
   - name: remove_uncompressed
     type: boolean
@@ -146,3 +152,14 @@ steps:
             compress_and_index_vcf "$file" "$index_files" "$remove_uncompressed"
           done
         fi
+
+        # Search for and compress FASTQs (FASTQs don't need to be indexed and can be compressed in place)
+        if [[ "$compress_fastq" == "true" ]]; then
+          find "$input_directory" -type f -name "${search_pattern}*fastq*" ${search_subdirectories} | \
+          while read -r file; do
+            echo "Compressing and indexing FASTQ: $file"
+            bgzip "$file"
+          done
+        fi
+        
+        
