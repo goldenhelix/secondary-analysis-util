@@ -161,5 +161,30 @@ steps:
             bgzip "$file"
           done
         fi
+
+        # Search for BEDs
+        if [[ "$compress_bed" == "true" ]]; then
+          find "$input_directory" -type f -name "${search_pattern}*bed*" ${search_subdirectories} | \
+          while read -r file; do
+            echo "Compressing and indexing BED: $file"
+            bgzip "$file"
+          done
+        fi
+        
+        # Search for BAMs
+        if [[ "$compress_bam" == "true" && "$index_files" == "true" ]]; then
+          find "$input_directory" -type f -name "${search_pattern}*bam*" ${search_subdirectories} | \
+          while read -r file; do
+            samtools index "$file"
+          done
+        fi
+
+        # Search for CRAMs
+        if [[ "$compress_cram" == "true" && "$index_files" == "true" ]]; then
+          find "$input_directory" -type f -name "${search_pattern}*cram*" ${search_subdirectories} | \
+          while read -r file; do
+            samtools index "$file"
+          done
+        fi
         
         
