@@ -56,6 +56,13 @@ parameters:
     help: Choose whether to index files after compression
     group: Advanced Options
 
+  - name: skip_out_of_order_vcf
+    type: boolean
+    label: Skip Out of Order VCFs
+    value: "true"
+    help: Choose whether to skip VCFs that are out of order. If false, the program will exit with an error if a VCF is out of order.
+    group: Advanced Options
+
   - name: search_subdirectories
     type: boolean
     label: Search Subdirectories
@@ -79,7 +86,7 @@ steps:
       image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |-
-        set -euo pipefail
+        set -eu pipefail
 
         # Set up scratch space
         cd /scratch
@@ -107,33 +114,42 @@ steps:
             echo "File $file_name is already compressed with bgzip"
             rm "${file_name}.tbi"
             if [[ "$file_type" != "gz" ]]; then
-              mv "$file_name" "$file_name.gz"
+              mv "$file_name" "${file_name}.gz"
+              file_name="${file_name}.gz"
             fi
           elif gzip -t "$file_name" > /dev/null 2>&1; then
             echo "File $file_name is compressed with gzip; decompressing and recompressing with bgzip..."
             # Decompress with gunzip and recompress with bgzip
-            gunzip -c "$file_name" | bgzip -c > "$file_name"
-            rm "$file_name"
-            file_name="$file_name.gz"
+            if [[ "$file_type" != "gz" ]]; then
+              mv "$file_name" "${file_name}.gz"
+              file_name="${file_name}.gz"
+            fi
+            gunzip "$file_name"
+            bgzip "${file_name%.gz}"
           else
             echo "File $file_name is not compressed; compressing..."
             bgzip -c "$file_name" > "$file_name.gz" || { echo "Failed to compress file $file_name, skipping..."; return 1; }
             rm "$file_name"
-            file_name="$file_name.gz"
+            file_name="${file_name}.gz"
           fi
 
           # Index file
           if [[ "$index" == "true" ]]; then
-            tabix -f "$file_name"
+            echo "Indexing file $file_name"
+            tabix -p vcf "$file_name" || { echo "Failed to index file $file_name (file may be out of order)"; if [[ "$skip_out_of_order_vcf" == "true" ]]; then echo "Skipping file $file_name and continuing..."; return 1; else echo "Exiting..."; exit 1; fi; }
           fi
 
           # Remove uncompressed file if requested
           if [[ "$remove_uncompressed" == "true" ]]; then
+            echo "Removing uncompressed file $file"
             rm "$file"
           fi
 
           # Copy file back to input directory
           cp "$file_name" "$(dirname "$file")"
+          if [[ "$index" == "true" ]]; then
+            cp "${file_name}.tbi" "$(dirname "$file")"
+          fi
 
         }
 
@@ -149,13 +165,13 @@ steps:
           find "$input_directory" -type f -name "${search_pattern}*vcf*" ${search_subdirectories} | \
           while read -r file; do
             echo "Compressing and indexing VCF: $file"
-            compress_and_index_vcf "$file" "$index_files" "$remove_uncompressed"
+            compress_and_index_vcf "$file" "$index_files" "$remove_uncompressed" || { echo "Failed to compress and index VCF: $file, skipping..."; }
           done
         fi
 
         # Search for and compress FASTQs (FASTQs don't need to be indexed and can be compressed in place)
         if [[ "$compress_fastq" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*fastq*" ${search_subdirectories} | \
+          find "$input_directory" -type f -name "${search_pattern}*fastq*" -o -name "${search_pattern}*fq*" ${search_subdirectories} | \
           while read -r file; do
             echo "Compressing and indexing FASTQ: $file"
             bgzip "$file"
@@ -173,16 +189,18 @@ steps:
         
         # Search for BAMs
         if [[ "$compress_bam" == "true" && "$index_files" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*bam*" ${search_subdirectories} | \
+          find "$input_directory" -type f -name "${search_pattern}*bam" ${search_subdirectories} | \
           while read -r file; do
+            echo "Indexing BAM: $file"
             samtools index "$file"
           done
         fi
 
         # Search for CRAMs
         if [[ "$compress_cram" == "true" && "$index_files" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*cram*" ${search_subdirectories} | \
+          find "$input_directory" -type f -name "${search_pattern}*cram" ${search_subdirectories} | \
           while read -r file; do
+            echo "Indexing CRAM: $file"
             samtools index "$file"
           done
         fi
