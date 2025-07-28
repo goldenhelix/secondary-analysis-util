@@ -15,3 +15,7 @@ This task can be used to either compress and index genomic files, or check for c
 - BED
 - FASTQ
 Additional options define whether to remove uncompressed files, index non-indexed files, search subdirectories, or search for a specific pattern (e.g., only perform selected actions for a specific sample in a directory).
+
+## Update Quality Control Catalog
+
+This task updates a given VSWarehouse 3 catalog with quality metrics from secondary and tertiary analysis steps. 

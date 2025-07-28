@@ -1,0 +1,39 @@
+name: Update Quality Control Catalog
+description: Updates a given VSWarehouse 3 catalog with quality metrics from secondary and tertiary analysis steps.
+auto_generate_session_for_account: "{workspaceBot}"
+
+parameters: 
+  - name: catalog_name
+    label: Catalog Name
+    type: string
+    help: The name of the catalog to update.
+    value: "SampleQC"
+
+  - name: input_folder
+    label: Input Folder 
+    type: directory
+    help: The folder containing the quality metrics to update the catalog with.
+    supports_location_mode: 'read_only'
+
+agent_requirements:
+  cpu_cores: 1
+  memory_gb: 1
+
+steps:
+  - name: update_qc_catalog
+    description: Updates the quality control catalog with the quality metrics from the secondary and tertiary analysis steps.
+    type: cmd
+    docker:
+      image: ${VSPIPELINE_DOCKER_IMAGE}
+    args:
+      - |-
+        set -eu pipefail
+
+        # Check that catalog exists 
+        gautil client catalog-list | grep -q "$catalog_name" || { echo "Catalog $catalog_name does not exist"; exit 1; }
+
+        # SECONDARY ANALYSIS METRICS # 
+
+        # Read through all metrics folders in input folder
+
+        # TERTIARY ANALYSIS METRICS # 
