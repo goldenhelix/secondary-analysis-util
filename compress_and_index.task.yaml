@@ -42,12 +42,21 @@ parameters:
     label: Compress and index FASTQs
     value: "true"
     help: Choose whether to compress and index FASTQs
-    
+
+  - name: convert_alignment_files
+    type: enum
+    label: Convert Alignment Files
+    value: "No"
+    choices: [No, BAM to CRAM, CRAM to BAM]
+    help: Choose whether to convert alignment files to CRAM or BAM. If no, the program will only index the files.
+    group: Advanced Options
+
   - name: remove_uncompressed
     type: boolean
     label: Remove Uncompressed Files
     value: "true"
     help: Choose whether to remove uncompressed files after compression and indexing
+    group: Advanced Options
 
   - name: index_files
     type: boolean
@@ -75,6 +84,14 @@ parameters:
     label: Search Pattern
     value: ""
     help: Pattern to search for genomic files (e.g., sample_name*). Only used if non-empty.
+    optional: true
+    group: Advanced Options
+
+  - name: reference_fasta
+    type: file
+    label: Reference FASTA
+    help: Reference FASTA file. Only used if converting BAM to CRAM or vice versa. If not provided, the default reference will be used.
+    supports_location_mode: 'read_only'
     optional: true
     group: Advanced Options
 
@@ -186,13 +203,46 @@ steps:
             bgzip "$file"
           done
         fi
+
+        # Determine whether to convert alignment files to CRAM or BAM
+        convert_bam=false
+        convert_cram=false  
+        if [[ "$convert_alignment_files" == "BAM to CRAM" ]]; then
+          convert_bam=true
+        elif [[ "$convert_alignment_files" == "CRAM to BAM" ]]; then
+          convert_cram=true  
+        fi
+
+        # Copy reference FASTA to scratch space if converting BAM to CRAM or vice versa
+        if [[ "$convert_bam" == "true" || "$convert_cram" == "true" ]]; then
+          # Use default reference if not provided
+          if [ -z "$reference_fasta" ]; then
+            echo "No reference FASTA file provided, using default reference..."
+            reference_fasta="$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}"
+            if [ ! -f "$reference_fasta" ]; then
+              echo "The default reference file does not exist at $reference_fasta"
+              echo "Please run the task Download Genomic Reference in the Sentieon Short Reads repository to download the reference and then re-run this task"
+              exit 1
+            fi
+          fi
+          cp "$reference_fasta" .
+          cp "${reference_fasta}.fai" .
+          reference_fasta_name=$(basename "$reference_fasta")
+        fi
         
         # Search for BAMs
         if [[ "$compress_bam" == "true" && "$index_files" == "true" ]]; then
           find "$input_directory" -type f -name "${search_pattern}*bam" ${search_subdirectories} | \
           while read -r file; do
-            echo "Indexing BAM: $file"
-            samtools index "$file"
+            if [[ "$convert_bam" == "true" ]]; then
+              echo "Converting BAM to CRAM: $file"
+              samtools view -T "${reference_fasta_name}" -C -o "${file%.bam}.cram" "$file"
+              rm "$file"
+              samtools index "${file%.bam}.cram"
+            else 
+              echo "Indexing BAM: $file"
+              samtools index "$file"
+            fi
           done
         fi
 
@@ -200,8 +250,15 @@ steps:
         if [[ "$compress_cram" == "true" && "$index_files" == "true" ]]; then
           find "$input_directory" -type f -name "${search_pattern}*cram" ${search_subdirectories} | \
           while read -r file; do
-            echo "Indexing CRAM: $file"
-            samtools index "$file"
+            if [[ "$convert_cram" == "true" ]]; then
+              echo "Converting CRAM to BAM: $file"
+              samtools view -T "${reference_fasta_name}" -b -o "${file%.cram}.bam" "$file"
+              rm "$file"
+              samtools index "${file%.cram}.bam"
+            else
+              echo "Indexing CRAM: $file"
+              samtools index "$file"
+            fi
           done
         fi
         
