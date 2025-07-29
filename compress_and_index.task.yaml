@@ -180,7 +180,7 @@ steps:
 
         # Search for VCFs
         if [[ "$compress_vcf" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*vcf*" ${search_subdirectories} | \
+          find "$input_directory" -type f -name "${search_pattern}*vcf" -o -name "${search_pattern}*vcf.gz" ${search_subdirectories} | \
           while read -r file; do
             echo "Compressing and indexing VCF: $file"
             compress_and_index_vcf "$file" "$index_files" "$remove_uncompressed" || { echo "Failed to compress and index VCF: $file, skipping..."; }
@@ -254,7 +254,8 @@ steps:
               samtools index "$(basename "$file" .bam).cram"
               cp "$(basename "$file" .bam).cram" "$(dirname "$file")"
               cp "$(basename "$file" .bam).cram.crai" "$(dirname "$file")"
-              rm "$file"      
+              rm "$file"
+              rm ./${file##*/}      
             else 
               echo "Indexing BAM: $file"
               samtools index "${file##*/}"
@@ -275,6 +276,7 @@ steps:
               cp "$(basename "$file" .cram).bam" "$(dirname "$file")"
               cp "$(basename "$file" .cram).bam.bai" "$(dirname "$file")"
               rm "$file"
+              rm ./${file##*/}
             else
               echo "Indexing CRAM: $file"
               samtools index "${file##*/}"
