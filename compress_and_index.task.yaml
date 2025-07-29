@@ -127,14 +127,16 @@ steps:
           # Case 3: File is compressed with something else
 
           # Check if file is already compressed with bgzip
-          if tabix -f "$file_name" > /dev/null 2>&1; then
+          if tabix -f "$file_name" > /dev/null 2>&1; then  # File is compressed with bgzip
             echo "File $file_name is already compressed with bgzip"
             rm "${file_name}.tbi"
             if [[ "$file_type" != "gz" ]]; then
-              mv "$file_name" "${file_name}.gz"
+              mv "$file" "${file}.gz"
+              rm "$file_name"
+              ln -s "${file}.gz" .
               file_name="${file_name}.gz"
             fi
-          elif gzip -t "$file_name" > /dev/null 2>&1; then
+          elif gzip -t "$file_name" > /dev/null 2>&1; then  # File is compressed with gzip
             echo "File $file_name is compressed with gzip; decompressing and recompressing with bgzip..."
             # Decompress with gunzip and recompress with bgzip
             rm "$file_name"
@@ -146,23 +148,24 @@ steps:
             fi
             gunzip "$file_name"
             bgzip "${file_name%.gz}"
-          else
+            rm "$file"
+            cp "$file_name" "$(dirname "$file")"
+          else  # File is not compressed 
             echo "File $file_name is not compressed; compressing..."
             bgzip -c "$file_name" > "$file_name.gz" || { echo "Failed to compress file $file_name, skipping..."; return 1; }
-            rm "$file_name"
+            # Remove uncompressed file if requested
+            if [[ "$remove_uncompressed" == "true" ]]; then
+              echo "Removing uncompressed file $file"
+              rm "$file"
+            fi
             file_name="${file_name}.gz"
+            cp "$file_name" "$(dirname "$file")"
           fi
 
           # Index file
           if [[ "$index" == "true" ]]; then
             echo "Indexing file $file_name"
             tabix -p vcf "$file_name" || { echo "Failed to index file $file_name (file may be out of order)"; if [[ "$skip_out_of_order_vcf" == "true" ]]; then echo "Skipping file $file_name and continuing..."; return 1; else echo "Exiting..."; exit 1; fi; }
-          fi
-
-          # Remove uncompressed file if requested
-          if [[ "$remove_uncompressed" == "true" ]]; then
-            echo "Removing uncompressed file $file"
-            rm "$file"
           fi
 
           if [[ "$index" == "true" ]]; then
@@ -189,7 +192,7 @@ steps:
 
         # Search for and compress FASTQs (FASTQs don't need to be indexed and can be compressed in place)
         if [[ "$compress_fastq" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*fastq*" -o -name "${search_pattern}*fq*" ${search_subdirectories} | \
+          find "$input_directory" -type f -name "${search_pattern}*fastq" -o -name "${search_pattern}*fq" ${search_subdirectories} | \
           while read -r file; do
             echo "Compressing and indexing FASTQ: $file"
             ln -s "$file" .
@@ -203,7 +206,7 @@ steps:
 
         # Search for BEDs
         if [[ "$compress_bed" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*bed*" ${search_subdirectories} | \
+          find "$input_directory" -type f -name "${search_pattern}*bed" ${search_subdirectories} | \
           while read -r file; do
             echo "Compressing and indexing BED: $file"
             ln -s "$file" .
@@ -255,7 +258,7 @@ steps:
               cp "$(basename "$file" .bam).cram" "$(dirname "$file")"
               cp "$(basename "$file" .bam).cram.crai" "$(dirname "$file")"
               rm "$file"
-              rm ./${file##*/}      
+              rm "$(basename "$file" .bam).cram"    
             else 
               echo "Indexing BAM: $file"
               samtools index "${file##*/}"
@@ -276,7 +279,7 @@ steps:
               cp "$(basename "$file" .cram).bam" "$(dirname "$file")"
               cp "$(basename "$file" .cram).bam.bai" "$(dirname "$file")"
               rm "$file"
-              rm ./${file##*/}
+              rm "$(basename "$file" .cram).bam"
             else
               echo "Indexing CRAM: $file"
               samtools index "${file##*/}"
