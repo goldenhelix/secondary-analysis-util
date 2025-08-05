@@ -21,27 +21,27 @@ parameters:
     
   - name: compress_bam
     type: boolean
-    label: Compress and index BAMs
+    label: Index BAMs
     value: "true"
-    help: Choose whether to compress and index BAMs
+    help: Choose whether to index BAMs
     
   - name: compress_cram
     type: boolean
-    label: Compress and index CRAMs
+    label: Index CRAMs
     value: "true"
-    help: Choose whether to compress and index CRAMs
+    help: Choose whether to index CRAMs
     
   - name: compress_bed
     type: boolean
-    label: Compress and index BEDs
+    label: Compress BEDs
     value: "true"
-    help: Choose whether to compress and index BEDs
+    help: Choose whether to compress BEDs
 
   - name: compress_fastq
     type: boolean
-    label: Compress and index FASTQs
+    label: Compress FASTQs
     value: "true"
-    help: Choose whether to compress and index FASTQs
+    help: Choose whether to compress FASTQs
 
   - name: convert_alignment_files
     type: enum
@@ -115,6 +115,7 @@ steps:
           local file=$1
           local index=$2
           local remove_uncompressed=$3
+          local input_directory=$4
           local file_type=${file##*.}  # Get file extension, used to clean up file name
 
           # Copy file to scratch space (since we support no-append)
@@ -123,9 +124,11 @@ steps:
 
           # Check if file is already compressed
           # Case 1: File is uncompressed
+          # Also check for existing .gz file with the same name
           # Case 2: File is compressed with bgzip
           # Case 3: File is compressed with something else
 
+          # Check if file is already compressed with bgzip
           # Check if file is already compressed with bgzip
           if tabix -f "$file_name" > /dev/null 2>&1; then  # File is compressed with bgzip
             echo "File $file_name is already compressed with bgzip"
@@ -136,6 +139,9 @@ steps:
               ln -s "${file}.gz" .
               file_name="${file_name}.gz"
             fi
+          elif [[ -f "${input_directory}/${file_name}.gz" && "$file_type" == "vcf" ]]; then
+            echo "Found compressed VCF in input directory with same name, skipping..."
+            return 1
           elif gzip -t "$file_name" > /dev/null 2>&1; then  # File is compressed with gzip
             echo "File $file_name is compressed with gzip; decompressing and recompressing with bgzip..."
             # Decompress with gunzip and recompress with bgzip
@@ -186,7 +192,7 @@ steps:
           find "$input_directory" -type f -name "${search_pattern}*vcf" -o -name "${search_pattern}*vcf.gz" ${search_subdirectories} | \
           while read -r file; do
             echo "Compressing and indexing VCF: $file"
-            compress_and_index_vcf "$file" "$index_files" "$remove_uncompressed" || { echo "Failed to compress and index VCF: $file, skipping..."; }
+            compress_and_index_vcf "$file" "$index_files" "$remove_uncompressed" "$input_directory" || { echo "Failed to compress and index VCF: $file, skipping..."; }
           done
         fi
 
