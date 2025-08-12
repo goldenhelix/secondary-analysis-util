@@ -17,14 +17,14 @@ parameters:
     type: boolean
     label: Search Subdirectories
     help: If true, the task will search subdirectories for BAMs, CRAMs, and VCFs.
-    default: true
+    value: true
     group: "Advanced Options"
 
   - name: continue_on_error
     type: boolean
     label: Continue on Error? 
     help: If true, the task will continue processing input files if one encounters an error.
-    default: true
+    value: true
     group: "Advanced Options"
 
 steps: 
