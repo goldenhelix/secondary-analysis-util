@@ -1,0 +1,91 @@
+name: Create Coverage TSF
+description: Create a Coverage TSF file for GenomeBrowse. Note that this task is redundant if the user is creating VarSeq projects with the VSPipeline task. 
+auto_generate_session_for_account: "{workspaceBot}"
+
+agent_requirements:
+  cpu_cores: 4
+  memory_gb: 8
+
+parameters:
+  - name: input_folder
+    type: directory
+    label: Input Folder
+    help: The folder containing the BAMs, CRAMs, or VCFs to create the Coverage TSF file for.
+    supports_location_mode: 'no_append'
+
+  - name: search_subdirectories
+    type: boolean
+    label: Search Subdirectories
+    help: If true, the task will search subdirectories for BAMs, CRAMs, and VCFs.
+    default: true
+    group: "Advanced Options"
+
+  - name: continue_on_error
+    type: boolean
+    label: Continue on Error? 
+    help: If true, the task will continue processing input files if one encounters an error.
+    default: true
+    group: "Advanced Options"
+
+steps: 
+  - name: create_coverage_tsf
+    description: Create a Coverage TSF file for GenomeBrowse
+    type: cmd
+    docker:
+      image: ${VSPIPELINE_DOCKER_IMAGE}
+    args:
+      - |-
+        set -eu pipefail
+
+        cd /scratch
+        
+        # Check for existing reference FASTA
+        if [[ ! -f "$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}" ]]; then
+          echo "Reference FASTA file does not exist at $WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}"
+          echo "Please run the task Download Genomic Reference to download the reference and then re-run this task"
+          exit 1
+        fi
+
+        export GH_TEMPDIR="/scratch"
+
+        # Find all BAMs, CRAMs, and VCFs in the input folder
+        if [[ "$search_subdirectories" == true ]]; then
+          max_depth="-maxdepth 1"
+        else 
+          max_depth=""
+        fi
+        find "$input_folder" $max_depth -type f -name "*.bam" -o -name "*.cram" -o -name "*.vcf.gz" |
+        while read -r file; do
+
+          echo "Performing precompute for $file"
+          if [[ -f "${input_folder}/${file}.covtsf" ]]; then
+            echo "Coverage TSF file already exists for $file"
+          else
+
+            # Create a symlink to the file and its index
+            ln -s "$file" .
+            if [[ "$file" == *.bam ]]; then
+              ln -s "$file".bai .
+            elif [[ "$file" == *.cram ]]; then
+              ln -s "$file".crai .
+            elif [[ "$file" == *.vcf.gz ]]; then
+              ln -s "$file".tbi .
+            fi
+
+            # Run precompute
+            gautil coverage "$(basename "$file")" --refFolder="$(dirname "$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}")" || \
+              { 
+                echo "Precompute failed for $file, continuing..."; 
+                if [[ "$continue_on_error" == true ]]; then continue; else exit 1; fi; 
+              }
+
+            cp "./$(basename "$file").covtsf" "${input_folder}/$(basename "$file").covtsf" || \
+              { 
+                echo "Failed to copy coverage TSF file to input folder";
+                echo "Please check if the input $file is empty";
+                if [[ "$continue_on_error" == true ]]; then continue; else exit 1; fi;
+              }
+
+          fi
+
+        done

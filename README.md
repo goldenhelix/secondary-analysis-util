@@ -17,3 +17,7 @@ Additional options define whether to remove uncompressed files, index non-indexe
 ### Update Quality Control Catalog
 
 This task updates a given VSWarehouse 3 catalog with quality metrics from secondary and tertiary analysis steps. 
+
+### Create Coverage TSF
+
+This task can be run on directories containing BAMs, CRAMs, or VCFs that will be visualized in GenomeBrowse to pre-compute the COVTSF file needed for zoomed-out viewing. 
