@@ -1,0 +1,45 @@
+name: Unarchive Files
+description: Unarchive files in a directory (ZIP, TAR, GZ, etc.)
+
+agent_requirements:
+  cpu_cores: 4
+  memory_gb: 8
+
+parameters:
+  - name: input_directory
+    type: directory
+    label: Input Directory
+    help: Directory containing files to unarchive
+    supports_location_mode: 'no_append'
+
+steps:
+  - name: unarchive
+    description: Unarchive files in a directory
+    type: cmd
+    docker:
+      image: registry.goldenhelix.com/public/sentieon:202503
+    args:
+      - |-
+        set -eu pipefail
+
+        # Unzip ZIP archives
+        find "$input_directory" -type f -name "*.zip" | \
+        while read -r file; do
+          echo "Unzipping ZIP archive: $file"
+          unzip "$file" -d "$(dirname "$file")"
+        done
+
+        # Unpack TAR archives
+        find "$input_directory" -type f -name "*.tar" | \
+        while read -r file; do
+          echo "Unpacking TAR archive: $file"
+          tar -xvf "$file" -C "$(dirname "$file")"
+        done
+        
+        # Unpack TAR.GZ archives
+        find "$input_directory" -type f -name "*.tar.gz" | \
+        while read -r file; do
+          echo "Unpacking TAR.GZ archive: $file"
+          tar -xzvf "$file" -C "$(dirname "$file")"
+        done
+        

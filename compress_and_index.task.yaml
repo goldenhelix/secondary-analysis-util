@@ -43,12 +43,6 @@ parameters:
     value: "true"
     help: Choose whether to compress FASTQs
 
-  - name: unzip_archives
-    type: boolean
-    label: Unzip ZIP Archives
-    value: "true"
-    help: Choose whether to unzip ZIP archives
-
   - name: convert_alignment_files
     type: enum
     label: Convert Alignment Files
@@ -109,7 +103,7 @@ steps:
       image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |-
-        set -euox pipefail
+        set -eu pipefail
 
         # Set up scratch space
         cd /scratch
@@ -195,16 +189,6 @@ steps:
         else
           search_subdirectories="-maxdepth 1"
         fi
-
-        # Unzip ZIP archives
-        if [[ "$unzip_archives" == "true" ]]; then
-          find "$input_directory" -type f -name "${search_pattern}*zip" ${search_subdirectories} | \
-          while read -r file; do
-            echo "Unzipping ZIP archive: $file"
-            unzip "$file" -d "$(dirname "$file")"
-          done
-        fi
-
 
         # Search for VCFs
         if [[ "$compress_vcf" == "true" ]]; then
