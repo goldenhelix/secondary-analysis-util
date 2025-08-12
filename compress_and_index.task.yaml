@@ -43,6 +43,12 @@ parameters:
     value: "true"
     help: Choose whether to compress FASTQs
 
+  - name: unzip_archives
+    type: boolean
+    label: Unzip ZIP Archives
+    value: "true"
+    help: Choose whether to unzip ZIP archives
+
   - name: convert_alignment_files
     type: enum
     label: Convert Alignment Files
@@ -103,7 +109,7 @@ steps:
       image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |-
-        set -eu pipefail
+        set -euox pipefail
 
         # Set up scratch space
         cd /scratch
@@ -128,7 +134,6 @@ steps:
           # Case 2: File is compressed with bgzip
           # Case 3: File is compressed with something else
 
-          # Check if file is already compressed with bgzip
           # Check if file is already compressed with bgzip
           if tabix -f "$file_name" > /dev/null 2>&1; then  # File is compressed with bgzip
             echo "File $file_name is already compressed with bgzip"
@@ -158,6 +163,10 @@ steps:
             cp "$file_name" "$(dirname "$file")"
           else  # File is not compressed 
             echo "File $file_name is not compressed; compressing..."
+            if [[ "$file_type" == "gz" ]]; then
+              mv "$file_name" "${file_name%.gz}"
+              file_name="${file_name%.gz}"
+            fi
             bgzip -c "$file_name" > "$file_name.gz" || { echo "Failed to compress file $file_name, skipping..."; return 1; }
             # Remove uncompressed file if requested
             if [[ "$remove_uncompressed" == "true" ]]; then
@@ -186,6 +195,16 @@ steps:
         else
           search_subdirectories="-maxdepth 1"
         fi
+
+        # Unzip ZIP archives
+        if [[ "$unzip_archives" == "true" ]]; then
+          find "$input_directory" -type f -name "${search_pattern}*zip" ${search_subdirectories} | \
+          while read -r file; do
+            echo "Unzipping ZIP archive: $file"
+            unzip "$file" -d "$(dirname "$file")"
+          done
+        fi
+
 
         # Search for VCFs
         if [[ "$compress_vcf" == "true" ]]; then
