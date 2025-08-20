@@ -102,7 +102,7 @@ steps:
     docker:
       image: registry.goldenhelix.com/public/sentieon:202503
     args:
-      - |-
+      - |- # shell
         set -eu pipefail
 
         # Set up scratch space
@@ -123,13 +123,8 @@ steps:
           local file_name=$(basename "$file")
 
           # Check if file is already compressed
-          # Case 1: File is uncompressed
-          # Also check for existing .gz file with the same name
-          # Case 2: File is compressed with bgzip
-          # Case 3: File is compressed with something else
-
-          # Check if file is already compressed with bgzip
-          if tabix -f "$file_name" > /dev/null 2>&1; then  # File is compressed with bgzip
+          # Case 1: File is compressed with bgzip
+          if tabix -f "$file_name" > /dev/null 2>&1; then  
             echo "File $file_name is already compressed with bgzip"
             rm "${file_name}.tbi"
             if [[ "$file_type" != "gz" ]]; then
@@ -138,12 +133,14 @@ steps:
               ln -s "${file}.gz" .
               file_name="${file_name}.gz"
             fi
+          # Subcase: Existing compressed file found
           elif [[ -f "${input_directory}/${file_name}.gz" && "$file_type" == "vcf" ]]; then
             echo "Found compressed VCF in input directory with same name, skipping..."
             return 1
-          elif gzip -t "$file_name" > /dev/null 2>&1; then  # File is compressed with gzip
+
+          # Case 3: File is compressed with gzip
+          elif gzip -t "$file_name" > /dev/null 2>&1; then  
             echo "File $file_name is compressed with gzip; decompressing and recompressing with bgzip..."
-            # Decompress with gunzip and recompress with bgzip
             rm "$file_name"
             cp "$file" .
             file_name=$(basename "$file")
@@ -155,14 +152,15 @@ steps:
             bgzip "${file_name%.gz}"
             rm "$file"
             cp "$file_name" "$(dirname "$file")"
-          else  # File is not compressed 
+
+          # Case 4: File is not compressed 
+          else  
             echo "File $file_name is not compressed; compressing..."
             if [[ "$file_type" == "gz" ]]; then
               mv "$file_name" "${file_name%.gz}"
               file_name="${file_name%.gz}"
             fi
             bgzip -c "$file_name" > "$file_name.gz" || { echo "Failed to compress file $file_name, skipping..."; return 1; }
-            # Remove uncompressed file if requested
             if [[ "$remove_uncompressed" == "true" ]]; then
               echo "Removing uncompressed file $file"
               rm "$file"
@@ -235,8 +233,6 @@ steps:
         elif [[ "$convert_alignment_files" == "CRAM to BAM" ]]; then
           convert_cram=true  
         fi
-
-        # TODO: Update with ENV variable preference for reference FASTA
 
         # Copy reference FASTA to scratch space if converting BAM to CRAM or vice versa
         if [[ "$convert_bam" == "true" || "$convert_cram" == "true" ]]; then
