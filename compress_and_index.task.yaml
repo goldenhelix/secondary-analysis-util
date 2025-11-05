@@ -1,6 +1,5 @@
 name: Compress and Index Genomic Files
 description: Compress, index, and validate genomic files (VCF, BAM, CRAM, BED, etc.)
-auto_generate_session_for_account: "{workspaceBot}"
 
 agent_requirements:
   cpu_cores: 4

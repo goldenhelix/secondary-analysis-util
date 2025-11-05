@@ -30,6 +30,7 @@ steps:
         set -eu pipefail
 
         # Check that catalog exists 
+        export GOLDENHELIX_USERDATA=${WORKSPACE_DIR}/AppData
         gautil client catalog-list | grep -q "$catalog_name" || { echo "Catalog $catalog_name does not exist"; exit 1; }
 
         # SECONDARY ANALYSIS METRICS # 
@@ -37,3 +38,21 @@ steps:
         # Read through all metrics folders in input folder
 
         # TERTIARY ANALYSIS METRICS # 
+
+  - name: update_sample_catalog
+    description: Add BWA-MEM Output to Sample Catalog
+    type: cmd
+    docker:
+      image: ${VSPIPELINE_DOCKER_IMAGE}
+    args:
+      - |- # shell
+        set -eu pipefail
+
+        export GOLDENHELIX_USERDATA=${WORKSPACE_DIR}/AppData
+
+        gautil client catalog-upsert SampleCatalog \
+          Sample="TestSample" \
+          BAMPath="devdata/TestSample.bam" || \
+          { echo "Failed to update sample catalog"; exit 1; }
+        echo "Updated sample TestSample with BAM: devdata/TestSample.bam"
+

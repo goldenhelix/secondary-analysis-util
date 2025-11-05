@@ -16,8 +16,6 @@ steps:
   - name: unarchive
     description: Unarchive files in a directory
     type: cmd
-    docker:
-      image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |- # shell
         set -eu pipefail

@@ -1,0 +1,233 @@
+name: Create Genomic File Subset
+description: "Create a subset of a FASTQ, uBAM, BAM, or VCF file for testing and debugging."
+
+agent_requirements:
+  cpu_cores: 4
+  memory_gb: 16
+
+parameters:
+  - name: input_directory
+    label: Input Directory
+    type: directory
+    supports_location_mode: 'read_only'
+    help: "Directory containing the genomic files to subset."
+
+  - name: output_directory
+    label: Output Directory
+    type: directory
+    optional: true
+    supports_location_mode: 'no_append'
+    help: "(Optional) Directory to write the subsetted files to. If not provided, the subsetted files will be written to the input directory."
+
+  - name: fastq
+    label: Subset FASTQs? 
+    type: boolean
+    value: true
+    help: "Choose whether to subset FASTQ files."
+    group: File Types
+
+  - name: bam
+    label: Subset BAMs?
+    type: boolean
+    value: true
+    help: "Choose whether to subset BAM files."
+    group: File Types
+
+  - name: vcf
+    label: Subset VCFs?
+    type: boolean
+    value: true
+    help: "Choose whether to subset VCF files."
+    group: File Types
+
+  - name: subset_factor
+    label: Subset Factor
+    type: integer
+    value: 10
+    help: "The factor by which to subset the files. For example, if the subset factor is 10, the program will subset the files to 10% of the original size."
+    group: Subsetting Options
+
+  - name: random_seed
+    label: Random Seed
+    type: integer
+    value: 42
+    help: "The random seed to use for the subsetting."
+    group: Subsetting Options
+
+steps: 
+  - name: create_subset
+    description: Create a subset of the genomic files
+    type: cmd
+    args: 
+      - |- # shell
+        set -eu pipefail
+
+        # Set up scratch space
+        cd /scratch
+
+        # Create output directory if it doesn't exist
+        if [[ -n "${output_directory:-}" ]]; then 
+          mkdir -p "$output_directory"
+        else 
+          output_directory="$(dirname "$input_directory")/$(basename "$input_directory")_subset"
+          mkdir -p "$output_directory"
+        fi
+        echo "Output directory: $output_directory"
+
+        # Go over input files
+        
+        # Process VCFs
+        if $vcf; then
+
+          echo "Processing VCF files..."
+
+          find "$input_directory" -type f -name "*.vcf" -o -name "*.vcf.gz" |
+          while read -r file; do
+
+            echo "Processing $file"
+          
+            # Subset the VCF file
+            # Get total number of variants
+            total_variants=$(bcftools view -H "$file" | wc -l)
+            
+            # Calculate number of variants to keep
+            num_variants_to_keep=$(( total_variants / subset_factor ))
+
+            echo "Total variants: $total_variants"
+            echo "Number of variants to keep: $num_variants_to_keep"
+
+            # Create random subset using bcftools
+            # Get base filename without extension
+            base_name=$(basename "$file" | sed 's/\.vcf\.gz$//' | sed 's/\.vcf$//')
+            
+            # Create temporary uncompressed file for processing in scratch
+            temp_vcf="/scratch/${base_name}.temp.vcf"
+            scratch_subset="/scratch/${base_name}.subset.vcf"
+            
+            # Decompress if input is compressed, otherwise copy
+            if [[ "$file" == *.gz ]]; then
+              bcftools view "$file" -h > "$temp_vcf"
+              bcftools view "$file" -H >> "$temp_vcf"
+            else
+              cp "$file" "$temp_vcf"
+            fi
+            
+            # Create subset by taking first N% of variants
+            bcftools view "$temp_vcf" \
+              -h > "$scratch_subset"
+              
+            bcftools view "$temp_vcf" \
+              -H \
+              | head -n "$num_variants_to_keep" \
+              >> "$scratch_subset"
+            
+            # Always compress and index the output in scratch
+            bgzip "$scratch_subset"
+            tabix -p vcf "${scratch_subset}.gz"
+            
+            # Copy final files to output directory
+            cp "${scratch_subset}.gz" "${output_directory}/${base_name}.subset.vcf.gz"
+            cp "${scratch_subset}.gz.tbi" "${output_directory}/${base_name}.subset.vcf.gz.tbi"
+            
+            # Clean up temporary files
+            rm -f "$temp_vcf" "${scratch_subset}.gz" "${scratch_subset}.gz.tbi"
+
+          done
+
+        fi
+
+        # Process BAMs
+        if $bam; then
+
+          echo "Processing BAM files..."
+
+          find "$input_directory" -type f -name "*.bam" |
+          while read -r file; do
+
+            echo "Processing $file"
+
+            # Subset the BAM file
+            base_name=$(basename "$file" | sed 's/\.bam$//')
+            scratch_subset_bam="/scratch/${base_name}.subset.bam"
+
+            # Get total number of reads
+            total_reads=$(samtools view -c "$file")
+            header_lines=$(samtools view -H "$file" | wc -l)
+            num_reads_to_keep=$(( ( total_reads / subset_factor ) + header_lines )) 
+
+            echo "Total reads: $total_reads"
+            echo "Number of lines to keep (reads plus header): $num_reads_to_keep"
+
+            # Create subset by taking first N lines (reads + header)
+            # Use a temporary file to avoid SIGPIPE issues
+            samtools view -h "$file" > "/scratch/${base_name}_temp.sam"
+            head -n "$num_reads_to_keep" "/scratch/${base_name}_temp.sam" | samtools view -b > "$scratch_subset_bam"
+            rm -f "/scratch/${base_name}_temp.sam"
+            
+            cp "$scratch_subset_bam" "${output_directory}/${base_name}.subset.bam"
+            
+            rm -f "$scratch_subset_bam" "${scratch_subset_bam}.bai"
+
+          done
+
+        fi
+
+        # Process FASTQs
+        if $fastq; then
+          echo "Processing FASTQ files..."
+
+          find "$input_directory" -type f \( -name "*.fastq" -o -name "*.fq" -o -name "*.fastq.gz" -o -name "*.fq.gz" \) |
+          while read -r file; do
+
+            echo "Processing $file"
+
+            # Subset the FASTQ file
+
+            # Get total number of reads (each read is 4 lines)
+            if [[ "$file" == *.gz ]]; then
+              total_lines=$(zcat "$file" | wc -l)
+            else
+              total_lines=$(cat "$file" | wc -l)
+            fi
+            
+            # Calculate number of reads (each read is 4 lines)
+            total_reads=$(( total_lines / 4 ))
+
+            # Calculate number of reads to keep and ensure it's a multiple of 4 lines
+            num_reads_to_keep=$(( total_reads / subset_factor ))
+            num_lines_to_keep=$(( num_reads_to_keep * 4 ))
+
+            echo "Total reads: $total_reads"
+            echo "Number of reads to keep: $num_reads_to_keep"
+            echo "Number of lines to keep: $num_lines_to_keep"
+
+            # Get base filename without extension
+            base_name=$(basename "$file" | sed 's/\.fastq\.gz$//' | sed 's/\.fq\.gz$//' | sed 's/\.fastq$//' | sed 's/\.fq$//')
+
+            # Create temporary file for processing in scratch
+            temp_fastq="/scratch/${base_name}.temp.fastq"
+            scratch_subset="/scratch/${base_name}.subset.fastq"
+
+            # Decompress if input is compressed, otherwise copy
+            if [[ "$file" == *.gz ]]; then
+              zcat "$file" > "$temp_fastq"
+            else
+              cp "$file" "$temp_fastq"
+            fi
+
+            # Create subset by taking first N% of reads (groups of 4 lines)
+            head -n "$num_lines_to_keep" "$temp_fastq" > "$scratch_subset"
+
+            # Copy final file to output directory
+            cp "$scratch_subset" "${output_directory}/${base_name}.subset.fastq"
+
+            # Clean up temporary files
+            rm -f "$temp_fastq" "$scratch_subset"
+
+          done
+
+        fi
+
+        echo "Subsetting complete!"
+        
+        
