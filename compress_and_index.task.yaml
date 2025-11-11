@@ -98,8 +98,6 @@ steps:
   - name: compress_and_index
     description: Compress and index genomic files
     type: cmd
-    docker:
-      image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |- # shell
         set -eu pipefail
